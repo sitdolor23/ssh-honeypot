@@ -88,10 +88,17 @@ def fake_shell(channel, session_id, client_ip, username):
         if should_close:
             break
 
-        if b"\r" in buffer or b"\n" in buffer:
+        while b"\r" in buffer or b"\n" in buffer:
+            newline_positions = [p for p in (buffer.find(b"\r"), buffer.find(b"\n"))if p != -1]
+            idx = min(newline_positions)
+            line = buffer[:idx]
+            rest = buffer[idx + 1:]
+            if buffer[idx:idx + 1] == b"\r" and rest[:1] == b"\n":
+                rest = rest[1:]
+            buffer = rest
+
             if awaiting_password:
-                typed_password = buffer.strip().decode(errors="ignore")
-                buffer = b""
+                typed_password = line.strip().decode(errors="ignore")
                 awaiting_password = False
                 action = pending_action
                 pending_action = None
@@ -120,8 +127,7 @@ def fake_shell(channel, session_id, client_ip, username):
                         channel.send(b"su: Authentication failure\r\n" + prompt())
                 continue
 
-            command = buffer.strip().decode(errors="ignore")
-            buffer = b""
+            command = line.strip().decode(errors="ignore")
 
             if not command:
                 channel.send(prompt())
@@ -143,9 +149,9 @@ def fake_shell(channel, session_id, client_ip, username):
                 continue
 
             if parts and parts[0] == "su":
-                rest = [p for p in parts[1:] if p not in ("-", "-l", "--login")]
-                login_shell = len(rest) != len(parts) - 1
-                target = rest[0] if rest else "root"
+                rest_parts = [p for p in parts[1:] if p not in ("-", "-l", "--login")]
+                login_shell = len(rest_parts) != len(parts) - 1
+                target = rest_parts[0] if rest_parts else "root"
                 session.history.append(command)
                 history_index = len(session.history)
                 pending_line = b""
@@ -162,11 +168,14 @@ def fake_shell(channel, session_id, client_ip, username):
             log_event(client_ip, "ssh", "command.input", {"session": session_id, "input": command})
 
             if command in ("exit", "logout"):
+                should_close = True
                 break
 
             channel.send(b"\n")
             response = run_command_line(command, session)
             response = response.replace("\n", "\r\n")
             channel.send(f"{response}\r\n".encode() + prompt())
+        if should_close:
+            break
     log_event(client_ip, "ssh", "session.closed", {"session": session_id})
     channel.close()

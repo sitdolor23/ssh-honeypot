@@ -23,7 +23,7 @@ HOST_KEY = _load_or_create_host_key()
 
 
 def handle_connection(client_socket, client_addr):
-    client_ip = client_addr[0]
+    client_ip = peek_proxy_ip(client_socket) or client_addr[0]
     session_id = uuid.uuid4().hex[:12]
 
     log_event(client_ip, "ssh", "session.connect", {"session": session_id})
@@ -49,6 +49,26 @@ def handle_connection(client_socket, client_addr):
     finally:
         transport.close()
 
+def peek_proxy_ip(client_socket):
+    try:
+        peeked = client_socket.recv(107, socket.MSG_PEEK)
+    except OSError:
+        return None
+
+    if not peeked.startswith(b"PROXY "):
+        return None
+
+    line_end = peeked.find(b"\r\n")
+    if line_end == -1:
+        return None
+
+    line = client_socket.recv(line_end + 2)
+    parts = line.decode(errors="ignore").split()
+
+    if len(parts) >= 3 and parts[1] in ("TCP4", "TCP6"):
+        return parts[2]
+
+    return None
 
 def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

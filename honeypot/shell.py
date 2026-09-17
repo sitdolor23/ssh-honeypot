@@ -5,6 +5,12 @@ from .local_command import run_command_line
 from .logger import log_event
 from .session import Session
 
+def redraw(channel, prompt, buffer, cursor):
+    channel.send(b"\r" + prompt() + buffer + b"\x1b[K")
+    trailing = len(buffer) - cursor
+    if trailing > 0:
+        channel.send(f"\x1b[{trailing}D".encode())
+
 
 def fake_shell(channel, session_id, client_ip, username):
     session = Session(
@@ -22,6 +28,7 @@ def fake_shell(channel, session_id, client_ip, username):
     channel.send(prompt())
 
     buffer = b""
+    cursor = 0
     history_index = 0
     pending_line = b""
     awaiting_password = False
@@ -43,6 +50,7 @@ def fake_shell(channel, session_id, client_ip, username):
                             pending_line = buffer
                         history_index -= 1
                         buffer = session.history[history_index].encode()
+                        cursor = len(buffer)
                         channel.send(b"\r" + prompt() + buffer + b"\x1b[K")
                     elif seq == b"\x1b[B" and history_index < len(session.history):
                         history_index += 1
@@ -50,14 +58,22 @@ def fake_shell(channel, session_id, client_ip, username):
                             buffer = pending_line
                         else:
                             buffer = session.history[history_index].encode()
+                        cursor = len(buffer)
                         channel.send(b"\r" + prompt() + buffer + b"\x1b[K")
+                    elif seq == b"\x1b[D" and cursor > 0:
+                        cursor -= 1
+                        channel.send(b"\x1b[D")
+                    elif seq == b"\x1b[C" and cursor < len(buffer):
+                        cursor +=1
+                        channel.send(b"\x1b[C")
                 i += 3
                 continue
 
             ch = bytes([data[i]])
 
-            if ch == b"\x03":  # Ctrl+C -- abort the current line
+            if ch == b"\x03":
                 buffer = b""
+                cursor = 0
                 history_index = len(session.history)
                 pending_line = b""
                 awaiting_password = False
@@ -66,7 +82,7 @@ def fake_shell(channel, session_id, client_ip, username):
                 i += 1
                 continue
 
-            if ch == b"\x04":  # Ctrl+D -- EOF on an empty line closes the session
+            if ch == b"\x04": 
                 if not buffer:
                     channel.send(b"logout\r\n")
                     should_close = True
@@ -75,14 +91,16 @@ def fake_shell(channel, session_id, client_ip, username):
                 continue
 
             if ch in (b"\x7f", b"\x08"):
-                if buffer:
-                    buffer = buffer[:-1]
+                if cursor > 0:
+                    buffer = buffer[: cursor - 1] + buffer[cursor:]
+                    cursor -= 1
                     if not awaiting_password:
-                        channel.send(b"\b \b")
+                        redraw(channel, prompt, buffer, cursor)
             else:
+                buffer = buffer[:cursor] + ch + buffer[cursor:]
+                cursor += 1
                 if not awaiting_password:
-                    channel.send(ch)
-                buffer += ch
+                    redraw(channel, prompt, buffer, cursor)
             i += 1
 
         if should_close:
@@ -96,6 +114,7 @@ def fake_shell(channel, session_id, client_ip, username):
             if buffer[idx:idx + 1] == b"\r" and rest[:1] == b"\n":
                 rest = rest[1:]
             buffer = rest
+            cursor = len(buffer)
 
             if awaiting_password:
                 typed_password = line.strip().decode(errors="ignore")

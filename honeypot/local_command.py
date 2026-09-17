@@ -136,6 +136,23 @@ def _mkdir(session: Session, arg: list[str]):
         session.dir_cache.setdefault(path, [])
     return ""
 
+def _rmdir(session: Session, arg: list[str]):
+    targets = [a for a in arg if not a.startswith("-")]
+    if not targets:
+        return "rmdir: missing operand"
+    for a in targets:
+        path = session.resolve_path(a)
+        status = session.paths.get(path)
+        if status is None or status == "deleted":
+            return f"rmdir: failed to remove '{a}': No such file or directory"
+        if status != "dir":
+            return f"rmdir: failed to remove '{a}': Not a directory"
+        if session.dir_cache.get(path):
+            return f"rmdir: failed to remove '{a}': Directory not empty"
+        session.mark(path, "deleted")
+        session.dir_cache.pop(path, None)
+    return ""
+
 
 def _rm(session: Session, arg: list[str]):
     flags = [a for a in arg if a.startswith("-")]
@@ -488,6 +505,7 @@ LOCAL_COMMANDS = {
     "touch": _touch,
     "mkdir": _mkdir,
     "rm": _rm,
+    "rmdir": _rmdir,
     "ls": _ls,
     "cat": _cat,
     "echo": _echo,

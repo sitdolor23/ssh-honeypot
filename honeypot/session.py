@@ -10,7 +10,8 @@ from .filesystem import (
     STANDARD_PASSWD_USERNAMES,
 )
 
-
+# Per-connection state: who's logged in, their fake filesystem
+# and command history.
 @dataclass
 class Session:
     session_id: str
@@ -25,10 +26,12 @@ class Session:
     # recall (shell.py) and the 'history' command (local_command.py).
     history: list[str] = field(default_factory=list)
 
+    # Sets the starting directory and builds this sessions's fake filesystem.
     def __post_init__(self) -> None:
         self.cwd = self.home_dir()
         self._load_filesystem()
 
+    # Populates one home directory (and its .ssh folder) with bait files.
     def _seed_home(self, home: str, is_root: bool) -> None:
         home_names = [".bashrc", ".profile", ".bash_history", ".ssh", "secrets.txt"]
         home_names.append("rotate_keys.sh" if is_root else ".mysql_history")
@@ -69,6 +72,9 @@ class Session:
         self.paths[secrets] = "file"
         self.files[secrets] = FAKE_SECRETS
 
+    # Loads the shared fake filesystem into this session, adds this user's
+    # own /etc/passwd + /etc/shadow entries if they're not a standard account,
+    # then seeds a home directory (and /root, for non-root sessions).
     def _load_filesystem(self) -> None:
         for path, names in DIRS.items():
             self.paths[path] = "dir"
@@ -93,6 +99,7 @@ class Session:
     def home_dir(self) -> str:
         return "/root" if self.username == "root" else f"/home/{self.username}"
 
+    # Turns a reletive path, ~ or ~/..., or absolute path into a normalised absolute path.
     def resolve_path(self, arg: str) -> str:
         if not arg or arg == "~":
             return self.home_dir()
@@ -102,6 +109,8 @@ class Session:
             arg = posixpath.join(self.cwd, arg)
         return posixpath.normpath(arg)
 
+    # Updates a path status (file/dir/deleted) and keeps its parent
+    # directory's listing in sync.
     def prompt_cwd(self) -> str:
         home = self.home_dir()
         if self.cwd == home:

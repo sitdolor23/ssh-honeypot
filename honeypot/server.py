@@ -10,7 +10,8 @@ from .logger import log_event
 from .ssh_interface import HoneypotServer
 from .shell import fake_shell
 
-
+# Loads the persistent host key from disk, or generates and saves a new one
+# if this is the first run -- keeps the same key across restarts.
 def _load_or_create_host_key() -> paramiko.RSAKey:
     if os.path.exists(HOST_KEY_PATH):
         return paramiko.RSAKey(filename=HOST_KEY_PATH)
@@ -21,7 +22,8 @@ def _load_or_create_host_key() -> paramiko.RSAKey:
 
 HOST_KEY = _load_or_create_host_key()
 
-
+# Handles one incoming TCP connection: sets up the Paramiko SSH transport,
+# waits for a shell request, then runs the fake shell until the session ends.
 def handle_connection(client_socket, client_addr):
     client_ip = peek_proxy_ip(client_socket) or client_addr[0]
     session_id = uuid.uuid4().hex[:12]
@@ -49,6 +51,10 @@ def handle_connection(client_socket, client_addr):
     finally:
         transport.close()
 
+# Checks for an optional PROXY protocol line at the start of the connection
+# (sent by haproxy on the VPS) and returns the real client IP from it, or
+# None if there isn't one -- in which case the caller falls back to the
+# socket's own peer address.
 def peek_proxy_ip(client_socket):
     try:
         peeked = client_socket.recv(107, socket.MSG_PEEK)
@@ -70,6 +76,7 @@ def peek_proxy_ip(client_socket):
 
     return None
 
+# Binds the listening socket and loops forever, spawning one thread per incoming connection.
 def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

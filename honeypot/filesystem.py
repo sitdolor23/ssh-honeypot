@@ -1,5 +1,7 @@
 from .config import HOSTNAME
 
+# Fake directory listing: maps each directory path to the names inside it,
+# used by ls/cd to know what "exists".
 DIRS = {
     "/": [
         "bin", "boot", "dev", "etc", "home", "lib", "media", "mnt",
@@ -31,6 +33,7 @@ DIRS = {
     "/home": [],
 }
 
+# Fake /etc/passwd and /etc/shadow content, one line per account.
 _PASSWD_LINES = (
     "root:x:0:0:root:/root:/bin/bash",
     "daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin",
@@ -47,8 +50,11 @@ _SHADOW_LINES = (
     "nobody:*:19700:0:99999:7:::",
 )
 
+# Usernames that appear in the fake /etc/passwd, for telling a "real" system
+# account apart from one an attacker creates.
 STANDARD_PASSWD_USERNAMES = frozenset(line.split(":", 1)[0] for line in _PASSWD_LINES)
 
+# Static file contents, keyed by path -- what cat/head/tail/etc. actually return
 FILES = {
     "/etc/passwd": "\n".join(_PASSWD_LINES),
     "/etc/shadow": "\n".join(_SHADOW_LINES),
@@ -110,7 +116,8 @@ FILES = {
     ),
 }
 
-# TODO: swap these for your actual CTF flag / decoy content once you get to item 10.
+# Bait content seeded into each session's home directory: fake keys,
+# shell history, scripts, and credentials for an attacker to find.
 FAKE_AUTHORIZED_KEYS = (
     "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDGZ8f3n5x8v3FAKEFAKEFAKEFAKEFAKE"
     "FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE admin@workstation"

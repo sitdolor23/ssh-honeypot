@@ -3,7 +3,8 @@ import time
 
 from .config import LOG_FILE
 
-
+# Builds one log entry from the given fields, the appends
+# it as a single JSON line to the log file.
 def log_event(src_ip: str, service: str, event_type: str, details: dict | None = None) -> None:
     entry = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.000000Z", time.gmtime()),

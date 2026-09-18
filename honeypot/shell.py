@@ -5,13 +5,17 @@ from .local_command import run_command_line
 from .logger import log_event
 from .session import Session
 
+# Repaints the current line (prompt + buffer) and repositions the cursor,
+# used whenever a charcter is inserted or deleted anywhere but the very end.
 def redraw(channel, prompt, buffer, cursor):
     channel.send(b"\r" + prompt() + buffer + b"\x1b[K")
     trailing = len(buffer) - cursor
     if trailing > 0:
         channel.send(f"\x1b[{trailing}D".encode())
 
-
+# Runs the interactive fake shell fro on SSH session: reads raw channel
+# bytes, handles line editing (typing, backspace, arrow keys), and dispatches
+# completed comman lines to local_command.run_command_line
 def fake_shell(channel, session_id, client_ip, username):
     session = Session(
         session_id=session_id,
@@ -20,6 +24,7 @@ def fake_shell(channel, session_id, client_ip, username):
         hostname=HOSTNAME,
     )
 
+    # Builds the "user@host:cwd$ " prompt string for the current session state.
     def prompt() -> bytes:
         suffix = "#" if session.username == "root" else "$"
         return f"{session.username}@{session.hostname}:{session.prompt_cwd()}{suffix} ".encode()
@@ -41,8 +46,11 @@ def fake_shell(channel, session_id, client_ip, username):
 
         should_close = False
         i = 0
+        # Processes each byte just recieved: arrow keys, Ctrl+C, Ctrl+D,
+        # backspace, or a normal typed character.
         while i < len(data):
             seq = data[i : i + 3]
+            # Arrow keys: Up/Down recall history, Left/Right move the cursor.
             if seq in (b"\x1b[A", b"\x1b[B", b"\x1b[C", b"\x1b[D"):
                 if not awaiting_password:
                     if seq == b"\x1b[A" and session.history and history_index > 0:
@@ -71,6 +79,7 @@ def fake_shell(channel, session_id, client_ip, username):
 
             ch = bytes([data[i]])
 
+            # Crtl+C: discard the current line and start fresh
             if ch == b"\x03":
                 buffer = b""
                 cursor = 0
@@ -82,6 +91,7 @@ def fake_shell(channel, session_id, client_ip, username):
                 i += 1
                 continue
 
+            # Ctrl+D on an empty line: close the session, like a real shell's EOF logout.
             if ch == b"\x04": 
                 if not buffer:
                     channel.send(b"logout\r\n")
@@ -90,6 +100,7 @@ def fake_shell(channel, session_id, client_ip, username):
                 i += 1
                 continue
 
+            # Backspace, or any other typed character: edit the buffer at the cursor.
             if ch in (b"\x7f", b"\x08"):
                 if cursor > 0:
                     buffer = buffer[: cursor - 1] + buffer[cursor:]
@@ -106,6 +117,8 @@ def fake_shell(channel, session_id, client_ip, username):
         if should_close:
             break
 
+        # Processes every complete line currently sitting in buffer -- there
+        # can be more than one if several lines arrived in a single recv().
         while b"\r" in buffer or b"\n" in buffer:
             newline_positions = [p for p in (buffer.find(b"\r"), buffer.find(b"\n"))if p != -1]
             idx = min(newline_positions)
@@ -116,6 +129,8 @@ def fake_shell(channel, session_id, client_ip, username):
             buffer = rest
             cursor = len(buffer)
 
+            # If a 'sudo'/'su' password prompt is pending, this line is the
+            # typed password -- verify nothing, just log it and act as if it worked.
             if awaiting_password:
                 typed_password = line.strip().decode(errors="ignore")
                 awaiting_password = False
@@ -157,6 +172,8 @@ def fake_shell(channel, session_id, client_ip, username):
             except ValueError:
                 parts = []
 
+            # 'sudo <command>' is intercepted here (rather than in local_command.py)
+            # specifically so it can prompt for a password first.
             if parts and parts[0] == "sudo" and len(parts) > 1 and parts[1:] != ["-l"]:
                 session.history.append(command)
                 history_index = len(session.history)
@@ -167,6 +184,7 @@ def fake_shell(channel, session_id, client_ip, username):
                 pending_action = ("sudo", " ".join(parts[1:]))
                 continue
 
+            # Same idea for 'su': prompt for a password before switching users.
             if parts and parts[0] == "su":
                 rest_parts = [p for p in parts[1:] if p not in ("-", "-l", "--login")]
                 login_shell = len(rest_parts) != len(parts) - 1
@@ -190,6 +208,7 @@ def fake_shell(channel, session_id, client_ip, username):
                 should_close = True
                 break
 
+            # Ordinary command: run it and print the result.
             channel.send(b"\n")
             response = run_command_line(command, session)
             response = response.replace("\n", "\r\n")

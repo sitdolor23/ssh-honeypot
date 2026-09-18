@@ -8,10 +8,12 @@ import time
 from .logger import log_event
 from .session import Session
 
+# Paths that are always flagged if read, regardless of command -- SSH private
+# Keys and shadow file are the classic things an attacker goes looking for.
 _SENSITIVE_SUFFIXES = ("/id_rsa",)
 _SENSITIVE_PATHS = {"/etc/shadow"}
 
-
+# Logs a 'suspicous.activity' event if the given path is one of the sensitive ones above.
 def _flag_sensitive_read(session: Session, path: str) -> None:
     if path in _SENSITIVE_PATHS or path.endswith(_SENSITIVE_SUFFIXES):
         log_event(
@@ -19,32 +21,33 @@ def _flag_sensitive_read(session: Session, path: str) -> None:
             {"session": session.session_id, "detail": f"read attempt: {path}"},
         )
 
-
+# Returns the current working directory
 def _pwd(session: Session, arg: list[str]):
     if arg:
         return None
     return session.cwd
 
-
+# Returns the current username
 def _whoami(session: Session, arg: list[str]):
     if arg:
         return None
     return session.username
 
-
+# Returns the session's hostname
 def _hostname(session: Session, arg: list[str]):
     if arg:
         return None
     return session.hostname
 
-
+# Returns a fake uid/gid line, root or a regular user depending
+# on who's logged in.
 def _id(session: Session, arg: list[str]):
     if arg:
         return None
     uid = 0 if session.username == "root" else 1000
     return f"uid={uid}({session.username}) gid={uid}({session.username}) groups={uid}({session.username})"
 
-
+# Parses uname's flags (-a, -s, -n, -r, -v, -m, -o) and returns the matching fields.
 def _uname(session: Session, arg: list[str]):
     valid = set("asnrvmo")
     flags = set()
@@ -71,13 +74,13 @@ def _uname(session: Session, arg: list[str]):
         parts.append("GNU/Linux")
     return " ".join(parts)
 
-
+# Returns the current date/time, formatted like the real 'date' command.
 def _date(session: Session, arg: list[str]):
     if arg:
         return None
     return time.strftime("%a %b %d %H:%M:%S UTC %Y", time.gmtime())
 
-
+# Returns a fake network interface listing.
 def _ifconfig(session: Session, arg: list[str]):
     if arg:
         return None
@@ -89,7 +92,7 @@ def _ifconfig(session: Session, arg: list[str]):
         "        inet 127.0.0.1  netmask 255.0.0.0"
     )
 
-
+# Returns a fake 'ip' command listing, same info as ifconfig in a different format.
 def _ip(session: Session, arg: list[str]):
     if arg:
         return None
@@ -100,7 +103,8 @@ def _ip(session: Session, arg: list[str]):
         "    inet 10.0.2.15/24 brd 10.0.2.255 scope global eth0"
     )
 
-
+# Changes the session's current directory, checking 
+# if the target exists and isn't root-locked
 def _cd(session: Session, arg: list[str]):
     a = arg[0] if arg else ""
     target = session.resolve_path(a)
@@ -114,7 +118,8 @@ def _cd(session: Session, arg: list[str]):
         return f"-bash: cd: {a or target}: Not a directory"
     return f"-bash: cd: {a or target}: No such file or directory"
 
-
+# Creates each target as an empty file
+# or does nothing if it already exist
 def _touch(session: Session, arg: list[str]):
     targets = [a for a in arg if not a.startswith("-")]
     if not targets:
@@ -125,7 +130,7 @@ def _touch(session: Session, arg: list[str]):
         session.files.setdefault(path, "")
     return ""
 
-
+# Creates each target as a directory
 def _mkdir(session: Session, arg: list[str]):
     targets = [a for a in arg if not a.startswith("-")]
     if not targets:
@@ -136,6 +141,7 @@ def _mkdir(session: Session, arg: list[str]):
         session.dir_cache.setdefault(path, [])
     return ""
 
+# Removes each target directory only if it's empty
 def _rmdir(session: Session, arg: list[str]):
     targets = [a for a in arg if not a.startswith("-")]
     if not targets:
@@ -153,7 +159,7 @@ def _rmdir(session: Session, arg: list[str]):
         session.dir_cache.pop(path, None)
     return ""
 
-
+# Removes each target file, or a directory too if -r/-R was given
 def _rm(session: Session, arg: list[str]):
     flags = [a for a in arg if a.startswith("-")]
     targets = [a for a in arg if not a.startswith("-")]
@@ -172,7 +178,7 @@ def _rm(session: Session, arg: list[str]):
         session.files.pop(path, None)
     return ""
 
-
+# Lists the content of a directoy, honoring -a/-A for hidden entries
 def _ls(session: Session, arg: list[str]):
     flags = [a for a in arg if a.startswith("-")]
     targets = [a for a in arg if not a.startswith("-")]
@@ -195,7 +201,7 @@ def _ls(session: Session, arg: list[str]):
         return ""
     return "  ".join(sorted(names))
 
-
+# Prints the content of each target file, checking permissions along the way.
 def _cat(session: Session, arg: list[str]):
     targets = [a for a in arg if not a.startswith("-")]
     if not targets:
@@ -216,11 +222,11 @@ def _cat(session: Session, arg: list[str]):
         outputs.append(session.files.get(path, ""))
     return "\n".join(outputs)
 
-
+# Prints its argument back, space-seperated.
 def _echo(session: Session, arg: list[str]):
     return " ".join(arg)
 
-
+# Fakes a failed wget download and logs the attempted URL.
 def _wget(session: Session, arg: list[str]):
     urls = [a for a in arg if not a.startswith("-")]
     if not urls:
@@ -237,7 +243,7 @@ def _wget(session: Session, arg: list[str]):
         f"wget: unable to resolve host address '{host}'"
     )
 
-
+# Fakes a failed curl download and logs the attempted URL.
 def _curl(session: Session, arg: list[str]):
     urls = [a for a in arg if not a.startswith("-")]
     if not urls:
@@ -250,7 +256,7 @@ def _curl(session: Session, arg: list[str]):
     )
     return f"curl: (6) Could not resolve host: {host}"
 
-
+# Returns a fake process listing.
 def _ps(session: Session, arg: list[str]):
     return (
         "  PID TTY          TIME CMD\n"
@@ -260,7 +266,8 @@ def _ps(session: Session, arg: list[str]):
         " 1402 pts/0    00:00:00 ps"
     )
 
-
+# Returns a fake active-connection listing, showing the attackers
+# own IP as the peer.
 def _netstat(session: Session, arg: list[str]):
     return (
         "Active Internet connections (w/o servers)\n"
@@ -268,16 +275,15 @@ def _netstat(session: Session, arg: list[str]):
         f"tcp        0      0 {session.hostname}:ssh        {session.client_ip}:51422        ESTABLISHED"
     )
 
-
+# Returns the session command histort
 def _history(session: Session, arg: list[str]):
     if not session.history:
         return ""
     return "\n".join(f"{i:>5}  {cmd}" for i, cmd in enumerate(session.history, start=1))
 
-
+# Handles 'sudo' with no command or with '-l' -- 'sudo <command>' itself is
+# intercepted earlier in shell.py so it can prompt for a password.
 def _sudo(session: Session, arg: list[str]):
-    # 'sudo <command>' is intercepted earlier, in shell.py, so it can prompt
-    # for a password -- this only ever runs for the bare/'-l' forms.
     if not arg:
         return "usage: sudo [-h] [-l] command"
     if arg == ["-l"]:
@@ -299,7 +305,8 @@ _WHICH_PATHS = {
     "ps": "/bin/ps", "netstat": "/bin/netstat", "head": "/usr/bin/head", "tail": "/usr/bin/tail",
 }
 
-
+# Looks up each name in _WHICH_PATHS and returns the
+# ones found, like the real 'which'
 def _which(session: Session, arg: list[str]):
     names = [a for a in arg if not a.startswith("-")]
     if not names:
@@ -307,7 +314,7 @@ def _which(session: Session, arg: list[str]):
     found = [_WHICH_PATHS[n] for n in names if n in _WHICH_PATHS]
     return "\n".join(found)
 
-
+# Returns a fake set of enviroment vairables
 def _env(session: Session, arg: list[str]):
     return (
         "SHELL=/bin/bash\n"
@@ -319,7 +326,7 @@ def _env(session: Session, arg: list[str]):
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     )
 
-
+# Returns a fake 'top' snapshot.
 def _top(session: Session, arg: list[str]):
     return (
         "top - 12:00:00 up 3 days,  2:14,  1 user,  load average: 0.08, 0.05, 0.01\n"
@@ -335,13 +342,14 @@ def _top(session: Session, arg: list[str]):
         f" 1500 {session.username:<9} 20   0    8300   3400   2900 R   0.0   0.2   0:00.00 top"
     )
 
-
+# Returns 'no crontab' for '-l', or nothing otherwise
 def _crontab(session: Session, arg: list[str]):
     if arg != ["-l"]:
         return None
     return f"no crontab for {session.username}"
 
-
+# Shared implementation behind both head and tail: parses '-n'/'-<N>',
+# then returns the first and last N lines of the target file.
 def _read_n_lines(session: Session, arg: list[str], from_end: bool):
     cmd = "tail" if from_end else "head"
     n = 10
@@ -381,23 +389,23 @@ def _read_n_lines(session: Session, arg: list[str], from_end: bool):
     selected = lines[-n:] if from_end else lines[:n]
     return "\n".join(selected)
 
-
+# Returns the first N lines of a file, via _read_n_lines.
 def _head(session: Session, arg: list[str]):
     return _read_n_lines(session, arg, from_end=False)
 
-
+# Returns the last N lines of a file, via _read_n_lines.
 def _tail(session: Session, arg: list[str]):
     return _read_n_lines(session, arg, from_end=True)
 
-
+# No pager here, just dumps the file like cat.
 def _less(session: Session, arg: list[str]):
     return _cat(session, arg)
 
-
+# Same as less, no actual paging.
 def _more(session: Session, arg: list[str]):
     return _cat(session, arg)
 
-
+# Walks the fake filesystem under the given root, filtering by -type and -name
 def _find(session: Session, arg: list[str]):
     targets = [a for a in arg if not a.startswith("-")]
     root = session.resolve_path(targets[0]) if targets else session.cwd
@@ -439,7 +447,8 @@ def _find(session: Session, arg: list[str]):
         results.append(path)
     return "\n".join(sorted(results))
 
-
+# Searhes file content for a pattern, either one file at a time
+# or recursively under a directory.
 def _grep(session: Session, arg: list[str]):
     recursive = False
     pattern = None
@@ -491,7 +500,7 @@ def _grep(session: Session, arg: list[str]):
                     results.append(f"{label}{line}")
     return "\n".join(results)
 
-
+# Maps each command name to the function that implements it.
 LOCAL_COMMANDS = {
     "pwd": _pwd,
     "whoami": _whoami,
@@ -545,7 +554,8 @@ _ERROR_PREFIXES = (
 def _looks_like_error(text: str) -> bool:
     return any(text.startswith(p) for p in _ERROR_PREFIXES)
 
-
+# Applies one pipe-filter stage (grep/head/tail/wc) to already-produced text --
+# not real piping, just re-processing the prior stage's output.
 def _apply_filter(cmd: str, args: list[str], text: str) -> str:
     if cmd == "grep":
         pattern = next((a for a in args if not a.startswith("-")), None)
@@ -575,11 +585,10 @@ def _apply_filter(cmd: str, args: list[str], text: str) -> str:
         return f"{len(lines)} {len(words)} {chars}"
     return text
 
-
+# Returns the index of the first occurrence of any string in `targets` that's
+# outside quotes, or -1. `targets` are tried longest-first per position so
+# '&&'/'||' get recognized before a bare ';' would be.
 def _find_unquoted(s: str, targets: tuple[str, ...]) -> int:
-    """Index of the first occurrence of any string in `targets` that's
-    outside quotes, or -1. `targets` are tried longest-first per position
-    so '&&'/'||' are recognized before a bare ';' would be."""
     in_single = in_double = False
     i, n = 0, len(s)
     while i < n:
@@ -595,10 +604,9 @@ def _find_unquoted(s: str, targets: tuple[str, ...]) -> int:
         i += 1
     return -1
 
-
+# Splits a command line on top-level ';', '&&', '||'. Returns a list of
+# (operator_before, segment) pairs, where operator_before is '' for the first segment.
 def _split_chain(line: str) -> list[tuple[str, str]]:
-    """Split on top-level ';', '&&', '||'. Returns [(operator_before, segment), ...]
-    where operator_before is '' for the first segment."""
     segments = []
     op_before = ""
     rest = line
@@ -612,7 +620,7 @@ def _split_chain(line: str) -> list[tuple[str, str]]:
         op_before = op
         rest = rest[idx + len(op) :]
 
-
+# Splits a pipeline segement off '|' into its component stages.
 def _split_pipeline(segment: str) -> list[str]:
     parts = []
     idx = _find_unquoted(segment, ("|",))
@@ -623,7 +631,8 @@ def _split_pipeline(segment: str) -> list[str]:
     parts.append(segment)
     return parts
 
-
+# Splits off a trailing '>' or '>>' redirect, returning the command part,
+# the target path (or None), and whether it's append mode.
 def _strip_redirect(segment: str) -> tuple[str, str | None, bool]:
     idx = _find_unquoted(segment, (">>", ">"))
     if idx == -1:
@@ -665,7 +674,8 @@ def _run_pipeline(segment: str, session: Session):
         text = _apply_filter(fcmd, fargs, text)
     return text
 
-
+# looks up and runs a single command's handler by name,
+# without chaining/pipe/redirects
 def try_local_command(command: str, session: Session):
     try:
         parts = shlex.split(command)
@@ -679,14 +689,10 @@ def try_local_command(command: str, session: Session):
         return None
     return handler(session, args)
 
-
+# Entry point used by shell.py: handles ';'/'&&'/'||' chaining, '|' pipelines
+# (grep/head/tail/wc only), and '>'/'>>' redirection, dispatching each
+# individual command through try_local_command/LOCAL_COMMANDS.
 def run_command_line(line: str, session: Session) -> str:
-    """
-    Entry point used by shell.py: handles ';'/'&&'/'||' chaining, '|'
-    pipelines (limited to grep/head/tail/wc as filter stages), and
-    '>'/'>>' redirection, dispatching each individual command through
-    try_local_command/LOCAL_COMMANDS.
-    """
     outputs = []
     last_failed = False
     for op, raw_segment in _split_chain(line):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import posixpath
 from dataclasses import dataclass, field
 
+# Imports all of the filesystem info
 from .filesystem import (
     DIRS, FILES, FAKE_AUTHORIZED_KEYS, FAKE_SECRETS, FAKE_BASHRC,
     FAKE_PROFILE, FAKE_BASH_HISTORY, ROOT_BASH_HISTORY, FAKE_ROTATE_KEYS_SCRIPT,
@@ -96,6 +97,7 @@ class Session:
             self._seed_home("/root", True)
             self.dir_cache.setdefault("/home", []).append(self.username)
 
+    # 
     def home_dir(self) -> str:
         return "/root" if self.username == "root" else f"/home/{self.username}"
 
@@ -119,9 +121,11 @@ class Session:
             return "~" + self.cwd[len(home):]
         return self.cwd
 
+    # 
     def is_root_locked(self, path: str) -> bool:
         return self.username != "root" and (path == "/root" or path.startswith("/root/"))
 
+    #
     def mark(self, path: str, status: str) -> None:
         self.paths[path] = status
         parent, base = posixpath.split(path)

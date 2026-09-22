@@ -19,7 +19,7 @@ def _load_or_create_host_key() -> paramiko.RSAKey:
     key.write_private_key_file(HOST_KEY_PATH)
     return key
 
-
+# Sets the host key
 HOST_KEY = _load_or_create_host_key()
 
 # Handles one incoming TCP connection: sets up the Paramiko SSH transport,

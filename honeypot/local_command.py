@@ -426,7 +426,7 @@ def _find(session: Session, arg: list[str]):
             i += 2
             continue
         if arg[i] == "-perm":
-            return ""  # nothing in this fake filesystem carries SUID/SGID bits
+            return "" 
         i += 1
 
     prefix = root if root == "/" else root + "/"
@@ -550,7 +550,7 @@ _ERROR_PREFIXES = (
     "curl:", "find:", "grep:", "head:", "tail:", "usage:",
 )
 
-
+# 
 def _looks_like_error(text: str) -> bool:
     return any(text.startswith(p) for p in _ERROR_PREFIXES)
 

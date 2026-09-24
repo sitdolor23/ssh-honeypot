@@ -107,6 +107,11 @@ def fake_shell(channel, session_id, client_ip, username):
                     cursor -= 1
                     if not awaiting_password:
                         redraw(channel, prompt, buffer, cursor)
+            elif ch in (b"\r", b"\n"):
+                buffer = buffer[:cursor] + ch + buffer[cursor:]
+                cursor += 1
+                if not awaiting_password:
+                    channel.send(b"\r\n")
             else:
                 buffer = buffer[:cursor] + ch + buffer[cursor:]
                 cursor += 1
@@ -209,7 +214,6 @@ def fake_shell(channel, session_id, client_ip, username):
                 break
 
             # Ordinary command: run it and print the result.
-            channel.send(b"\n")
             response = run_command_line(command, session)
             response = response.replace("\n", "\r\n")
             channel.send(f"{response}\r\n".encode() + prompt())
